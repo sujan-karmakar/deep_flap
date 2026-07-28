@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import argparse
-import os
+import os 
 
 
 # Device setup
@@ -22,7 +22,7 @@ else:
 
 
 RUNS_DIR = "runs"
-os.makedirs(RUNS_DIR, exists_ok = True)
+os.makedirs(RUNS_DIR, exist_ok = True)
 
 
 class Agent:
@@ -49,7 +49,6 @@ class Agent:
 
         self.LOG_FILE = os.path.join(RUNS_DIR, f"{self.param_set}.log")
         self.MODEL_FILE = os.path.join(RUNS_DIR, f"{self.param_set}.pt")
-
 
 
     def run(self, is_training = True, render = False):
@@ -84,11 +83,11 @@ class Agent:
             terminated = False
 
             while (episode_reward < self.reward_threshold and not terminated):
-                if is_training and random.random() < self.epsilon:
+                if is_training and random.random() < epsilon:
                     action = env.action_space.sample() # Explore
                     action = torch.tensor(action, dtype = torch.long, device = device)
                 else:
-                    with torch.no_grad:
+                    with torch.no_grad():
                         action = policy_dqn(state.unsqueeze(dim = 0)).squeeze().argmax() # Exploit
 
                 next_state, reward, terminated, _, _ = env.step(action.item())
@@ -96,13 +95,14 @@ class Agent:
                 # Tensors
                 reward = torch.tensor(reward, dtype = torch.float, device = device)
                 next_state = torch.tensor(next_state, dtype = torch.float, device = device)
+                terminated = torch.tensor(terminated, dtype = torch.float, device = device)
 
                 if is_training:
                     memory.append((state, action, next_state, reward, terminated))
                     steps += 1
 
                 state = next_state
-                episode_reward += reward
+                episode_reward += reward.item()
 
             print(f"Episode: {episode + 1}, Reward: {episode_reward}")
 
@@ -134,6 +134,29 @@ class Agent:
 
         #env.close() # Stop manually
 
+    def optimize(self, mini_batch, policy_dqn, target_dqn):
+        # Get experience
+        state, action, next_state, reward, terminated = zip(*mini_batch)
+
+        state = torch.stack(state)
+        action = torch.stack(action)
+        next_state = torch.stack(next_state)
+        reward = torch.stack(reward)
+        terminated = torch.stack(terminated)
+
+        # Target Q
+        with torch.no_grad():
+            target_q = reward + (1 - terminated) * self.gamma * target_dqn(next_state).max(dim = 1)[0]
+
+        # Predicted Q for the actions actually taken
+        current_q = policy_dqn(state).gather(1, action.unsqueeze(1)).squeeze(1)
+
+        # Loss
+        loss = self.loss(current_q, target_q)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = "Train or test model")
@@ -146,4 +169,4 @@ if __name__ == "__main__":
     if args.train:
         dqn.run(is_training = True)
     else:
-        dqn.run(is_training = False)
+        dqn.run(is_training = False, render = True)
