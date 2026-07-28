@@ -1,5 +1,6 @@
 import flappy_bird_gymnasium
 import gymnasium as gym
+import random
 from dqn import DQN
 from experience_replay import ReplayMemory
 import itertools
@@ -40,6 +41,7 @@ class Agent:
         self.optimizer = None
 
 
+
     def run(self, is_training = True, render = False):
         env = gym.make("FlappyBird-v0", render_mode = "human" if render else None)
 
@@ -49,16 +51,28 @@ class Agent:
 
         if is_training:
             memory = ReplayMemory(self.replay_memory_size)
+            epsilon = self.epsilon_init
 
         for episode in itertools.count():
             state, _ = env.reset()
-            episode_rewards = 0
+            state = torch.tensor(state, dtype = torch.float, device = device)
+
+            episode_reward = 0
             terminated = False
 
             while not terminated:
-                action = env.action_space.sample()
+                if is_training and random.random() < self.epsilon:
+                    action = env.action_space.sample() # Explore
+                    action = torch.tensor(action, dtype = torch.long, device = device)
+                else:
+                    with torch.no_grad:
+                        action = policy_dqn(state.unsqueeze(dim = 0)).squeeze().argmax() # Exploit
 
-                next_state, reward, terminated, _, _ = env.step()
+                next_state, reward, terminated, _, _ = env.step(action.item())
+
+                # Tensors
+                reward = torch.tensor(reward, dtype = torch.float, device = device)
+                next_state = torch.tensor(next_state, dtype = torch.float, device = device)
 
                 if is_training:
                     memory.append((state, action, next_state, reward, terminated))
@@ -67,5 +81,8 @@ class Agent:
                 episode_reward += reward
 
             print(f"Episode: {episode + 1}, Reward: {episode_reward}")
+
+            # Epsilon Decay:
+            epsilon = max(epsilon * self.epsilon_decay, self.epsilon_min)
 
         #env.close() # Stop manually
