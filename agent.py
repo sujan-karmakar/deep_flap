@@ -2,6 +2,7 @@ import flappy_bird_gymnasium
 import gymnasium as gym
 import torch
 from dqn import DQN
+from experience_replay import ReplayMemory
 
 # Device setup
 if torch.backends.mps.is_available():
@@ -21,10 +22,16 @@ def run(self, is_training = True, render = False):
 
     state, _ = env.reset()
 
+    if is_training:
+        memory = ReplayMemory(10000)
+
     while True:
         action = env.action_space.sample()
 
-        state, reward, terminated, _, _ = env.step()
+        next_state, reward, terminated, _, _ = env.step()
+
+        if is_training:
+            memory.append((state, action, next_state, reward, terminated))
 
         if terminated:
             break
